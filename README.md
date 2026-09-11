@@ -4,6 +4,8 @@ Workflow de **n8n** para el manejo dinámico de tarifas de transporte: extrae da
 
 Archivo del workflow: [`Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json`](<Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json>)
 
+Diagrama de arquitectura (Canva): [https://canva.link/61aolw7105apalh](https://canva.link/61aolw7105apalh) — también incluido en el repo como PDF: [`Manejo-de-Tarifas-Arquitectura-Multiagente-con-HITL (1).pptx (1).pdf`](<Manejo-de-Tarifas-Arquitectura-Multiagente-con-HITL (1).pptx (1).pdf>)
+
 ## Tabla de contenido
 
 - [Visión general](#visión-general)
