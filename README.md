@@ -2,8 +2,9 @@
 
 Workflow de **n8n** para el manejo dinámico de tarifas de transporte: extrae datos crudos tipo "Big Data", los limpia y valida con un agente de IA, analiza el desempeño de las tarifas (Completion Rate) con otro agente de IA, pasa por un proceso de **Human in the Loop (HITL)** cuando detecta anomalías, calcula la tarifa final con una fórmula de negocio y publica el resultado en un dashboard sobre PostgreSQL.
 
-Archivo del workflow: [`Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json`](<Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json>)
+Archivo del workflow: [`Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json`](<workflow/Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json>)
 
+Diagrama de arquitectura (Canva): [https://canva.link/61aolw7105apalh](https://canva.link/61aolw7105apalh) — también incluido en el repo como PDF: [`Manejo-de-Tarifas-Arquitectura-Multiagente-con-HITL (1).pptx (1).pdf`](<Manejo-de-Tarifas-Arquitectura-Multiagente-con-HITL (1).pptx (1).pdf>)
 
 ## Diagrama de contexto C4
 
@@ -194,7 +195,7 @@ Todos los agentes usan **Google Gemini** (`@n8n/n8n-nodes-langchain.lmChatGoogle
 
 ## Cómo importar y ejecutar
 
-1. En n8n, ir a **Workflows → Import from File** y seleccionar el archivo [`Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json`](<Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json>).
+1. En n8n, ir a **Workflows → Import from File** y seleccionar el archivo [`Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json`](<workflow/Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json>).
 2. Configurar/actualizar las credenciales de Postgres, Google Gemini y Slack en cada nodo correspondiente.
 3. Crear las tablas de PostgreSQL necesarias (ver sección de tablas).
 4. Activar el workflow o ejecutarlo manualmente desde el nodo **Inicio Manual**.
