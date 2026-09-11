@@ -4,6 +4,15 @@ Workflow de **n8n** para el manejo dinámico de tarifas de transporte: extrae da
 
 Archivo del workflow: [`Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json`](<Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard (2).json>)
 
+
+## Diagrama de contexto C4
+
+![alt text](img/diagramaContexto.png)
+
+## Diagrama Inicial
+
+![alt text](img/diagrama.png)
+
 ## Tabla de contenido
 
 - [Visión general](#visión-general)
@@ -190,3 +199,10 @@ Todos los agentes usan **Google Gemini** (`@n8n/n8n-nodes-langchain.lmChatGoogle
 3. Crear las tablas de PostgreSQL necesarias (ver sección de tablas).
 4. Activar el workflow o ejecutarlo manualmente desde el nodo **Inicio Manual**.
 5. Si el análisis detecta anomalías, revisar el formulario de HITL desde el link enviado a Slack para aprobar o rechazar los ajustes propuestos antes de que se publiquen en el dashboard.
+
+## Autores 
+
+- [Nikolas Martinez Rivera](https://github.com/NikoMAR3)
+- [Julian Camilo Lopez Barrero](https://github.com/JulianLopez11)
+- [Anderson Fabian Garcia Nieto](https://github.com/Anderfg13)
+- [Cristian Camilo Gomez Fernandez](https://github.com/xmunder)
