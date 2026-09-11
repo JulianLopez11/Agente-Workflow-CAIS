@@ -1,0 +1,1446 @@
+{
+  "name": "Manejo de Tarifas - Limpieza, Analisis, HITL y Dashboard",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Limpieza de Datos (Agente)\nVerifica que los datos extraídos de Big Data estén correctos: tipos, tarifas válidas, campos obligatorios, duplicados, formatos de fecha, etc.\nDevuelve el dataset limpio + un log de correcciones/errores (formato forzado por Structured Output Parser).",
+        "height": 220,
+        "width": 320
+      },
+      "id": "ee1bff2d-9e0c-43e0-98b2-345b670c75be",
+      "name": "Nota - Limpieza",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        608,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Verifica y limpia el siguiente lote de métricas de tarifas (hora-ciudad-producto-zona), extraído directamente del origen que simula Big Data. Para CADA fila del arreglo 'filas', revisa: duplicados por (codigo_ciudad + codigo_producto + fecha + hora), hora fuera de rango 0-23, métricas negativas o nulas en campos obligatorios (eyeballs, calls, trips), y que cr/ecr/etr/ar/dar/oar sean proporciones entre 0 y 1. Si un dato no se puede validar con certeza, no lo adivines: marca esa fila como error. Devuelve SOLO un JSON con: {\"datos_limpios\": [...todas las filas válidas...], \"errores\": [...]}.\n\nLote de datos:\n{{ JSON.stringify($json.filas) }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Eres un agente experto en calidad de datos para un sistema de manejo de tarifas. Tu trabajo es limpiar, validar y estandarizar los datos antes de que se guarden en base de datos. Sé estricto: si un dato no se puede validar con certeza, marcalo como error en vez de adivinar."
+        }
+      },
+      "id": "4f25b30d-52f8-454d-859f-ed5ab6f2dfb5",
+      "name": "Agente Limpieza de Datos",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        640,
+        800
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "tarifas_datos"
+        },
+        "columns": {
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": true,
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [],
+          "schema": [],
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "7c84134b-6a8f-4e94-bafc-972c87f1abcd",
+      "name": "Guardar en Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2400,
+        800
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "bYMAntXE2BTANR9W",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Consulta Resultados\nSe dispara automáticamente después de guardar los datos limpios (ya no depende de webhook/frontend externo).",
+        "height": 180,
+        "width": 300
+      },
+      "id": "5490eb33-52ca-43c2-a4d7-6c9bdf34b1f1",
+      "name": "Nota - Consulta",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1904,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "tarifas_datos"
+        },
+        "returnAll": true,
+        "where": {
+          "values": [
+            {
+              "column": "fecha",
+              "value": "={{ $today.format('yyyy-MM-dd') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "17dbb150-df2a-4b4a-a5a2-d8374ddadda5",
+      "name": "Consultar Datos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2896,
+        800
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "bYMAntXE2BTANR9W",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Analisis del WorkFlow (Agente)\nAnaliza los datos consultados. Es el manejador de tarifas: detecta el riesgo principal (ej. tarifas fuera de rango / desactualizadas), tendencias y anomalías. Salida estructurada para el HITL.",
+        "height": 220,
+        "width": 320
+      },
+      "id": "10818414-1875-417d-bf81-4499965dc2cd",
+      "name": "Nota - Analisis",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2784,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analiza el siguiente set de métricas de tarifas (agrupadas por ciudad+producto+hora) y los parámetros de tarifa vigentes. Identifica: (1) el riesgo principal, (2) anomalías de CR fuera del rango 60-80%, (3) tendencias relevantes, (4) recomendaciones en texto, y (5) ajustes propuestos estructurados por cada anomalía detectada. Devuelve SOLO un JSON con: {\"resumen\": \"...\", \"riesgo_principal\": \"...\", \"anomalias\": [...], \"recomendaciones\": [...], \"ajustes_propuestos\": [ { \"codigo_ciudad\": \"...\", \"nombre_ciudad\": \"...\", \"codigo_producto\": \"...\", \"hora_inicio\": 0, \"hora_fin\": 0, \"cr_observado\": 0.0, \"componente_ajustado\": \"base_fare|distance_fare|time_fare|longdistance_fare|fuel_surcharge\", \"ajuste_pct\": 0 } ] }. IMPORTANTE: usa EXACTAMENTE estos nombres de campo dentro de cada objeto de ajustes_propuestos, en español y sin variantes: codigo_ciudad, nombre_ciudad, codigo_producto, hora_inicio, hora_fin, cr_observado, componente_ajustado, ajuste_pct. No uses 'cr_observed' ni ninguna otra variante en inglés.\n\nMétricas y parámetros:\n{{ JSON.stringify($json) }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Eres un agente analista experto en pricing dinámico de tarifas de transporte. Tu tarea es evaluar el CR (Completion Rate = trips/calls) por ciudad+producto+franja horaria. Regla de negocio: si el CR promedio de una franja horaria supera 80% (exceso de demanda completada / posible sub-oferta), recomienda BAJAR el componente 'base_fare' o 'time_fare' entre 5% y 15%. Si el CR cae por debajo de 60% (sobre-oferta / precios muy altos ahuyentando pasajeros), recomienda SUBIR ese mismo componente entre 5% y 15%. Si el CR está entre 60% y 80%, es rango normal: no generes ajuste para esa combinación. Nunca modifiques impuestos ni parámetros fijos externos, esos no son parte de tu alcance."
+        }
+      },
+      "id": "13d883db-ac8f-4f2c-a21d-a711cc88ad16",
+      "name": "Agente Analisis Tarifas",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        3424,
+        800
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "content": "## Human in the Loop (HITL)\nUn humano revisa el análisis antes de publicarlo en el dashboard. Se genera un link de formulario que debe abrir y aprobar/rechazar.",
+        "height": 200,
+        "width": 300
+      },
+      "id": "97deb5c2-7b5d-4cb0-b656-0ec5ee4e0cbf",
+      "name": "Nota - HITL",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        4112,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "formTitle": "Revisión de Análisis de Tarifas",
+        "formDescription": "Revisa el análisis generado por el agente antes de enviarlo al dashboard.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Resumen del análisis",
+              "fieldType": "textarea",
+              "defaultValue": "={{ 'Resumen: ' + ($('Agente Analisis Tarifas').item.json.output?.resumen ?? $('Agente Analisis Tarifas (Fallback)').item.json.output?.resumen ?? 'N/D') + '\\n\\nRiesgo principal: ' + ($('Agente Analisis Tarifas').item.json.output?.riesgo_principal ?? $('Agente Analisis Tarifas (Fallback)').item.json.output?.riesgo_principal ?? 'N/D') + '\\n\\nAnomalias: ' + (($('Agente Analisis Tarifas').item.json.output?.anomalias ?? $('Agente Analisis Tarifas (Fallback)').item.json.output?.anomalias ?? []).join('; ')) + '\\n\\nRecomendaciones: ' + (($('Agente Analisis Tarifas').item.json.output?.recomendaciones ?? $('Agente Analisis Tarifas (Fallback)').item.json.output?.recomendaciones ?? []).join('; ')) }}"
+            },
+            {
+              "fieldLabel": "Decisión",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "aprobado"
+                  },
+                  {
+                    "option": "rechazado"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Comentarios",
+              "fieldType": "textarea"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0e11cce1-47df-4881-b554-23be874f3197",
+      "name": "Revision Humana (HITL)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "webhookId": "hitl-revision-tarifas",
+      "position": [
+        5200,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json['Decisión'] }}",
+              "rightValue": "aprobado",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2ad75165-10da-4562-9bf1-768567cf834a",
+      "name": "Aprobado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        5424,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Dashboard (Postgres)\nSe combinan los parámetros de tarifa vigentes con la recomendación del agente (si hay ajuste, se aplica el % al componente indicado). Se calcula la tarifa final con la fórmula real: max(tarifa_minima, base_fare+distance_fare+time_fare+longdistance_fare+fuel_surcharge). Se inserta como fila nueva en Postgres (sin leer/reescribir archivos, sin condición de carrera).",
+        "height": 384
+      },
+      "id": "ef702fd7-2dd4-4140-a96e-32ef305a3063",
+      "name": "Nota - Dashboard",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        4672,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        1024
+      ],
+      "id": "76586ac3-0dbf-4a5c-a635-303612343f61",
+      "name": "Google Gemini Chat Model",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "TUgmGJR7BBk3EVhu",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        3424,
+        1040
+      ],
+      "id": "f3b0992d-429f-46ea-80ca-9f8ac74d32b7",
+      "name": "Google Gemini Chat Model1",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "WadASCmF1wxbQHoA",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "42af438d-017a-4b25-8383-38593e1752c3",
+      "name": "Inicio Manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -816,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "id": "24fdefa5-9322-489a-a230-c7fc1c8d4dda",
+      "name": "Disparador Diario",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -816,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "bigdata_tarifas_raw"
+        },
+        "returnAll": true,
+        "where": {
+          "values": []
+        },
+        "options": {}
+      },
+      "id": "f39431cf-4661-40c2-8bdb-27d5283f6659",
+      "name": "Extraer Big Data (origen)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        160,
+        832
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "bYMAntXE2BTANR9W",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"datos_limpios\": [ { \"codigo_pais\": \"CO\", \"codigo_ciudad\": \"57040100\", \"nombre_ciudad\": \"Barranquilla\", \"codigo_producto\": \"EXP\", \"nombre_producto\": \"Express\", \"codigo_county\": \"57040101\", \"nombre_county\": \"Norte - Centro Historico\", \"periodo\": 37, \"fecha\": \"2026-09-10\", \"hora\": 19, \"eyeballs\": 1400, \"calls\": 950, \"bubbles\": 1700, \"search\": 1.2, \"online_drivers\": 140, \"service_drivers\": 80, \"trips\": 810, \"tsh\": 80.0, \"cr\": 0.8526, \"ecr\": 0.679, \"etr\": 0.579, \"ar\": 0.85, \"dar\": 0.6, \"oar\": 0.571 } ],\n  \"errores\": [\"Fila 12: hora fuera de rango 0-23\"]\n}",
+        "autoFix": true
+      },
+      "id": "8b4a5962-7dfd-47bf-9638-117e4c59e91d",
+      "name": "Parser Salida Limpieza",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        912,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"resumen\": \"Texto de resumen del análisis\",\n  \"riesgo_principal\": \"Descripción del riesgo principal detectado\",\n  \"anomalias\": [\"Barranquilla EXP 19:00-20:00: CR 85% muy por encima del rango normal (60-80%)\"],\n  \"recomendaciones\": [\"Bajar base_fare 10% en Barranquilla EXP de 19:00 a 20:00 para atraer más oferta\"],\n  \"ajustes_propuestos\": [ { \"codigo_ciudad\": \"57040100\", \"nombre_ciudad\": \"Barranquilla\", \"codigo_producto\": \"EXP\", \"hora_inicio\": 19, \"hora_fin\": 20, \"cr_observado\": 0.85, \"componente_ajustado\": \"base_fare\", \"ajuste_pct\": -10 } ]\n}",
+        "autoFix": true
+      },
+      "id": "230d0666-9845-4351-a00b-b6fe5348c8f5",
+      "name": "Parser Salida Analisis",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        4032,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "output.datos_limpios",
+        "options": {}
+      },
+      "id": "61226245-bcd3-46cf-bd03-9e013551632d",
+      "name": "Separar Tarifas Limpias",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2112,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.output.ajustes_propuestos.length }}",
+              "operator": {
+                "operation": "gt",
+                "type": "number"
+              },
+              "rightValue": 0
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "132ff827-8132-43cb-af48-a41ee13b00d3",
+      "name": "¿Hay Anomalías?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4688,
+        784
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "90d1c480-5138-472c-a069-f45bad774023",
+      "name": "Fin - Publicado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        6800,
+        848
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "84ecbb91-31a8-4a9a-9f48-973881cf47be",
+      "name": "Fin - Rechazado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        5664,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Umbral de auto-aprobación\nSolo si el agente de análisis detecta anomalías, la corrida va a revisión humana (HITL). Si no hay anomalías, se auto-aprueba y va directo al dashboard. Esto reemplaza el 'todo pasa siempre por HITL' anterior.",
+        "height": 208,
+        "width": 300
+      },
+      "id": "d19f1367-42a8-489f-aa44-80fcfc455dca",
+      "name": "Nota - Umbral Anomalías",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3552,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "C0C0ZSZ4YGN",
+          "cachedResultName": "all-cais"
+        },
+        "text": "=Hay un análisis de tarifas con anomalías esperando revisión humana (HITL).\nRevisa y aprueba/rechaza aquí: {{ $execution.resumeUrl }}",
+        "otherOptions": {}
+      },
+      "id": "6f5e5328-eddb-47c6-9b18-5eef4e9032ee",
+      "name": "Notificar HITL (Slack)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        4944,
+        624
+      ],
+      "webhookId": "9a3d06a5-6388-4518-a06c-469bf4d23ed3",
+      "credentials": {
+        "slackApi": {
+          "id": "IextTWIQK97b8wYH",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "parametros_tarifa_vigentes"
+        },
+        "returnAll": true,
+        "where": {
+          "values": []
+        },
+        "options": {}
+      },
+      "id": "3bb7d9e4-6bbf-4567-a2e3-72124fd6a325",
+      "name": "Consultar Parámetros Vigentes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2608,
+        800
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "bYMAntXE2BTANR9W",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const metricas = $input.all().map(i => i.json);\nconst parametros = $('Consultar Parámetros Vigentes').all().map(i => i.json);\nreturn [{ json: { metricas, parametros_vigentes: parametros } }];"
+      },
+      "id": "00a25316-7a77-4095-8250-721ffb205e1a",
+      "name": "Combinar Métricas y Parámetros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3152,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function obtenerAnalisis() {\n  try {\n    const principal = $('Agente Analisis Tarifas').item.json;\n    if (principal && principal.output) return principal.output;\n  } catch (e) {}\n  try {\n    const respaldo = $('Agente Analisis Tarifas (Fallback)').item.json;\n    if (respaldo && respaldo.output) return respaldo.output;\n  } catch (e) {}\n  throw new Error('Ni el agente principal ni el de respaldo de analisis produjeron una salida valida.');\n}\n\nconst analisis = obtenerAnalisis();\nconst parametros = $('Combinar Métricas y Parámetros').item.json.parametros_vigentes;\nconst ajustes = analisis.ajustes_propuestos || [];\nconst comentarios = $json['Comentarios'] ?? null;\n\nfunction calcularTarifa(p, ajuste) {\n  let { base_fare, distance_fare, time_fare, longdistance_fare, fuel_surcharge, tarifa_minima } = p;\n  base_fare = Number(base_fare); distance_fare = Number(distance_fare); time_fare = Number(time_fare);\n  longdistance_fare = Number(longdistance_fare); fuel_surcharge = Number(fuel_surcharge); tarifa_minima = Number(tarifa_minima);\n  let componente_ajustado = null, ajuste_pct = null;\n  if (ajuste) {\n    componente_ajustado = ajuste.componente_ajustado;\n    ajuste_pct = ajuste.ajuste_pct;\n    const factor = 1 + (ajuste_pct / 100);\n    if (componente_ajustado === 'base_fare') base_fare = base_fare * factor;\n    else if (componente_ajustado === 'distance_fare') distance_fare = distance_fare * factor;\n    else if (componente_ajustado === 'time_fare') time_fare = time_fare * factor;\n    else if (componente_ajustado === 'longdistance_fare') longdistance_fare = longdistance_fare * factor;\n    else if (componente_ajustado === 'fuel_surcharge') fuel_surcharge = fuel_surcharge * factor;\n  }\n  const suma = base_fare + distance_fare + time_fare + longdistance_fare + fuel_surcharge;\n  const tarifa_calculada = Math.max(tarifa_minima, suma);\n  return { base_fare, distance_fare, time_fare, longdistance_fare, fuel_surcharge, tarifa_minima, tarifa_calculada, componente_ajustado, ajuste_pct };\n}\n\nconst filas = parametros.map(p => {\n  const ajuste = ajustes.find(a => a.codigo_ciudad === p.codigo_ciudad && a.codigo_producto === p.codigo_producto);\n  const calculo = calcularTarifa(p, ajuste);\n  return {\n    json: {\n      codigo_ciudad: p.codigo_ciudad,\n      nombre_ciudad: ajuste ? ajuste.nombre_ciudad : null,\n      codigo_producto: p.codigo_producto,\n      hora_inicio: ajuste ? ajuste.hora_inicio : null,\n      hora_fin: ajuste ? ajuste.hora_fin : null,\n      cr_observado: ajuste ? ajuste.cr_observado : null,\n      resumen: analisis.resumen,\n      riesgo_principal: analisis.riesgo_principal,\n      anomalias: JSON.stringify(analisis.anomalias || []),\n      recomendaciones: JSON.stringify(analisis.recomendaciones || []),\n      aprobado_por_comentarios: comentarios || 'Auto-aprobado: sin anomalias detectadas por el agente',\n      ...calculo\n    }\n  };\n});\nreturn filas;"
+      },
+      "id": "c39990f1-6df9-4db7-bad3-9b50ac9fb9b9",
+      "name": "Calcular Tarifa (Formula Magellan)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6352,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "dashboard_tarifas"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "creado_en",
+              "displayName": "creado_en",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "codigo_ciudad",
+              "displayName": "codigo_ciudad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nombre_ciudad",
+              "displayName": "nombre_ciudad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "codigo_producto",
+              "displayName": "codigo_producto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hora_inicio",
+              "displayName": "hora_inicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hora_fin",
+              "displayName": "hora_fin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "cr_observado",
+              "displayName": "cr_observado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "componente_ajustado",
+              "displayName": "componente_ajustado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ajuste_pct",
+              "displayName": "ajuste_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "resumen",
+              "displayName": "resumen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "riesgo_principal",
+              "displayName": "riesgo_principal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "anomalias",
+              "displayName": "anomalias",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "recomendaciones",
+              "displayName": "recomendaciones",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "aprobado_por_comentarios",
+              "displayName": "aprobado_por_comentarios",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "base_fare",
+              "displayName": "base_fare",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "distance_fare",
+              "displayName": "distance_fare",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "time_fare",
+              "displayName": "time_fare",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "longdistance_fare",
+              "displayName": "longdistance_fare",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fuel_surcharge",
+              "displayName": "fuel_surcharge",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "tarifa_minima",
+              "displayName": "tarifa_minima",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "tarifa_calculada",
+              "displayName": "tarifa_calculada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "e887f1cd-fef9-416b-8837-5d00592d6746",
+      "name": "Guardar en Dashboard",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        6560,
+        848
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "bYMAntXE2BTANR9W",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { filas: $input.all().map(i => i.json) } }];"
+      },
+      "id": "a6a2b031-a614-4368-8e62-825885a4ff5b",
+      "name": "Agrupar Filas Crudas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "id": "8b54d445-6570-4c0c-bbc5-955278fb8f13",
+      "name": "Google Gemini Chat Model (Fallback Limpieza)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1168,
+        1264
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "HxhHr7CNgMiWywNd",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Verifica y limpia el siguiente lote de métricas de tarifas (hora-ciudad-producto-zona), extraído directamente del origen que simula Big Data. Para CADA fila del arreglo 'filas', revisa: duplicados por (codigo_ciudad + codigo_producto + fecha + hora), hora fuera de rango 0-23, métricas negativas o nulas en campos obligatorios (eyeballs, calls, trips), y que cr/ecr/etr/ar/dar/oar sean proporciones entre 0 y 1. Si un dato no se puede validar con certeza, no lo adivines: marca esa fila como error. Devuelve SOLO un JSON con: {\"datos_limpios\": [...todas las filas válidas...], \"errores\": [...]}.\n\nLote de datos:\n{{ JSON.stringify($json.filas) }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Eres un agente experto en calidad de datos para un sistema de manejo de tarifas. Tu trabajo es limpiar, validar y estandarizar los datos antes de que se guarden en base de datos. Sé estricto: si un dato no se puede validar con certeza, marcalo como error en vez de adivinar."
+        }
+      },
+      "id": "c70a014d-3119-498c-802b-95a2ad50ac96",
+      "name": "Agente Limpieza de Datos (Fallback)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1536,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "id": "bfad84eb-2bdf-44ff-a71f-dead9bef26e8",
+      "name": "Google Gemini Chat Model (Fallback Analisis)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        3920,
+        1264
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "JUf4QM3WUxZP82AG",
+          "name": "Google Gemini(PaLM) Api account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analiza el siguiente set de métricas de tarifas (agrupadas por ciudad+producto+hora) y los parámetros de tarifa vigentes. Identifica: (1) el riesgo principal, (2) anomalías de CR fuera del rango 60-80%, (3) tendencias relevantes, (4) recomendaciones en texto, y (5) ajustes propuestos estructurados por cada anomalía detectada. Devuelve SOLO un JSON con: {\"resumen\": \"...\", \"riesgo_principal\": \"...\", \"anomalias\": [...], \"recomendaciones\": [...], \"ajustes_propuestos\": [ { \"codigo_ciudad\": \"...\", \"nombre_ciudad\": \"...\", \"codigo_producto\": \"...\", \"hora_inicio\": 0, \"hora_fin\": 0, \"cr_observado\": 0.0, \"componente_ajustado\": \"base_fare|distance_fare|time_fare|longdistance_fare|fuel_surcharge\", \"ajuste_pct\": 0 } ] }. IMPORTANTE: usa EXACTAMENTE estos nombres de campo dentro de cada objeto de ajustes_propuestos, en español y sin variantes: codigo_ciudad, nombre_ciudad, codigo_producto, hora_inicio, hora_fin, cr_observado, componente_ajustado, ajuste_pct. No uses 'cr_observed' ni ninguna otra variante en inglés.\n\nMétricas y parámetros:\n{{ JSON.stringify($json) }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Eres un agente analista experto en pricing dinámico de tarifas de transporte. Tu tarea es evaluar el CR (Completion Rate = trips/calls) por ciudad+producto+franja horaria. Regla de negocio: si el CR promedio de una franja horaria supera 80% (exceso de demanda completada / posible sub-oferta), recomienda BAJAR el componente 'base_fare' o 'time_fare' entre 5% y 15%. Si el CR cae por debajo de 60% (sobre-oferta / precios muy altos ahuyentando pasajeros), recomienda SUBIR ese mismo componente entre 5% y 15%. Si el CR está entre 60% y 80%, es rango normal: no generes ajuste para esa combinación. Nunca modifiques impuestos ni parámetros fijos externos, esos no son parte de tu alcance."
+        }
+      },
+      "id": "c6965738-9600-40f3-b9eb-4db1ab168d82",
+      "name": "Agente Analisis Tarifas (Fallback)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        3952,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO control_limites (fecha, ejecuciones, llamadas_llm_estimadas)\nVALUES (CURRENT_DATE, 1, 2)\nON CONFLICT (fecha) DO UPDATE SET\n  ejecuciones = control_limites.ejecuciones + 1,\n  llamadas_llm_estimadas = control_limites.llamadas_llm_estimadas + 2\nRETURNING *;",
+        "options": {}
+      },
+      "id": "48bf13af-d018-45c9-8065-0da17b1aa818",
+      "name": "Verificar Limite Diario",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -480,
+        816
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "bYMAntXE2BTANR9W",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "or",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.ejecuciones }}",
+              "operator": {
+                "operation": "gt",
+                "type": "number"
+              },
+              "rightValue": 20
+            },
+            {
+              "leftValue": "={{ $json.llamadas_llm_estimadas }}",
+              "operator": {
+                "operation": "gt",
+                "type": "number"
+              },
+              "rightValue": 50
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "4b6bd341-1f8a-452f-a143-aef1e17242ee",
+      "name": "¿Excede Limite Diario?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        816
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "throw new Error('Limite diario de ejecuciones/costo alcanzado (' + $json.ejecuciones + ' ejecuciones, ~' + $json.llamadas_llm_estimadas + ' llamadas LLM hoy). El workflow no continua para controlar costo. Ajusta el limite en el nodo Verificar Limite Diario si es necesario.');"
+      },
+      "id": "33cad797-8ede-45b8-a528-713ea07809f6",
+      "name": "Detenido - Limite Alcanzado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  fecha: new Date().toISOString().slice(0,10),\n  ejecucion_id: String($execution.id),\n  errores: JSON.stringify(($json.output && $json.output.errores) || []),\n  cantidad_errores: (($json.output && $json.output.errores) || []).length\n} }];"
+      },
+      "id": "b2aeff24-3ad6-4c99-9708-52f5ef439986",
+      "name": "Preparar Registro Errores",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "log_errores_limpieza"
+        },
+        "columns": {
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": true,
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [],
+          "schema": [],
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "932f5b9a-8393-40d3-893b-e4f615876e4a",
+      "name": "Registrar Errores en BD",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2160,
+        1120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "bYMAntXE2BTANR9W",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Revision Humana (HITL)": {
+      "main": [
+        [
+          {
+            "node": "Aprobado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aprobado?": {
+      "main": [
+        [
+          {
+            "node": "Calcular Tarifa (Formula Magellan)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin - Rechazado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Limpieza de Datos",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Analisis Tarifas",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser Salida Limpieza": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Agente Limpieza de Datos",
+            "type": "ai_outputParser",
+            "index": 0
+          },
+          {
+            "node": "Agente Limpieza de Datos (Fallback)",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser Salida Analisis": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Agente Analisis Tarifas",
+            "type": "ai_outputParser",
+            "index": 0
+          },
+          {
+            "node": "Agente Analisis Tarifas (Fallback)",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Limpieza de Datos": {
+      "main": [
+        [
+          {
+            "node": "Separar Tarifas Limpias",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar Registro Errores",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agente Limpieza de Datos (Fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar Tarifas Limpias": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Analisis Tarifas": {
+      "main": [
+        [
+          {
+            "node": "¿Hay Anomalías?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agente Analisis Tarifas (Fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay Anomalías?": {
+      "main": [
+        [
+          {
+            "node": "Notificar HITL (Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Calcular Tarifa (Formula Magellan)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar HITL (Slack)": {
+      "main": [
+        [
+          {
+            "node": "Revision Humana (HITL)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Datos": {
+      "main": [
+        [
+          {
+            "node": "Combinar Métricas y Parámetros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combinar Métricas y Parámetros": {
+      "main": [
+        [
+          {
+            "node": "Agente Analisis Tarifas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular Tarifa (Formula Magellan)": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Fin - Publicado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Database": {
+      "main": [
+        [
+          {
+            "node": "Consultar Parámetros Vigentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Parámetros Vigentes": {
+      "main": [
+        [
+          {
+            "node": "Consultar Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Big Data (origen)": {
+      "main": [
+        [
+          {
+            "node": "Agrupar Filas Crudas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agrupar Filas Crudas": {
+      "main": [
+        [
+          {
+            "node": "Agente Limpieza de Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model (Fallback Limpieza)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Limpieza de Datos (Fallback)",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Parser Salida Limpieza",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Limpieza de Datos (Fallback)": {
+      "main": [
+        [
+          {
+            "node": "Separar Tarifas Limpias",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar Registro Errores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model (Fallback Analisis)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Analisis Tarifas (Fallback)",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Parser Salida Analisis",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Analisis Tarifas (Fallback)": {
+      "main": [
+        [
+          {
+            "node": "¿Hay Anomalías?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inicio Manual": {
+      "main": [
+        [
+          {
+            "node": "Verificar Limite Diario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disparador Diario": {
+      "main": [
+        [
+          {
+            "node": "Verificar Limite Diario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Limite Diario": {
+      "main": [
+        [
+          {
+            "node": "¿Excede Limite Diario?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Excede Limite Diario?": {
+      "main": [
+        [
+          {
+            "node": "Detenido - Limite Alcanzado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extraer Big Data (origen)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Registro Errores": {
+      "main": [
+        [
+          {
+            "node": "Registrar Errores en BD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true,
+    "saveExecutionProgress": true,
+    "executionTimeout": 600
+  },
+  "versionId": "f7879889-e3a2-4b64-a6ea-e6e0018ec384",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp",
+    "instanceId": "dc14e7b6464d49b0fd1d7a26c9c84c20ebc9f881c81e94fab3ed8388d4293a70"
+  },
+  "nodeGroups": [],
+  "id": "J3oyeZQJ8HrjVZEG",
+  "tags": []
+}
